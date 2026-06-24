@@ -58,16 +58,16 @@ response_model = ChatOpenAI(
 )
 
 
-loader =  {"fudan_case.pdf": PyPDFLoader("fudan_case.pdf")}
+loader =  {"Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf": PyPDFLoader("Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf")}
 docs = []
 for loader in loader.values():
         docs.extend(loader.load())
-        pages = convert_from_path("fudan_case.pdf")
+        pages = convert_from_path("Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf")
         reader = easyocr.Reader(['ch_sim', 'en'])
         for page in pages:
             page_array = np.array(page)
             result = reader.readtext(page_array)
-docs.append(Document(page_content=" ".join([line[1] for line in result]), metadata={"source": "fudan_case.pdf"}))
+docs.append(Document(page_content=" ".join([line[1] for line in result]), metadata={"source": "Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf"}))
 splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
 chunks = splitter.split_documents(docs)
 
