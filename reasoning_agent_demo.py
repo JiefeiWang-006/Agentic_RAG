@@ -329,15 +329,15 @@ def rank(state:CDSSState) -> Diagnosis:
 from langgraph.graph import END, START, StateGraph
 workflow = StateGraph(CDSSState)
 
-workflow.add_node("diagonosis",diagnosis)
+workflow.add_node("diagnosis",diagnosis)
 workflow.add_node("factor",factor)
 workflow.add_node("hypothesis",hypothesis)
 workflow.add_node("rag_verify",rag_verify)
 workflow.add_node("rank",rank)
 
-workflow.set_entry_point("diagonosis")
+workflow.set_entry_point("diagnosis")
 
-workflow.add_edge("diagonosis","factor")
+workflow.add_edge("diagnosis","factor")
 workflow.add_edge("factor","hypothesis")
 workflow.add_edge("hypothesis","rag_verify")
 workflow.add_edge("rag_verify","rank")

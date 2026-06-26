@@ -15,10 +15,9 @@ while True:
                        "retry_count": 0
         },
                          config = config)
-    
+                        
     print(result["messages"][-1].content)
 
- 
 def one_time_answer(query:str) :
     result = retrieval_agent.graph.invoke({ "messages": [HumanMessage(content=query)],
                         "session_id": "test_session",

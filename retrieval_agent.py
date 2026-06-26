@@ -11,25 +11,18 @@ from langchain_classic.chains.combine_documents import create_stuff_documents_ch
 
 from dotenv import load_dotenv
 load_dotenv()
-import bs4
-import requests
+
 from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader,DirectoryLoader, TextLoader
-from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
-from typing import NotRequired
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough, RunnableParallel
-from langchain_core.output_parsers import StrOutputParser
 from langchain_classic.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
 
-from langchain_classic.chains import create_retrieval_chain
+
 from langchain_core.prompts import MessagesPlaceholder
 from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
 from langchain_classic.retrievers import ContextualCompressionRetriever
@@ -37,17 +30,13 @@ from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from pdf2image import convert_from_path
 import easyocr
 import numpy as np
-from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain_core.runnables.history import RunnableWithMessageHistory
+
 
 import my_state
 from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.memory import MemorySaver
 
 
 from langgraph.graph import MessagesState
-from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import tools_condition
 
 response_model = ChatOpenAI(
