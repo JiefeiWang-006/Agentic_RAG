@@ -1,16 +1,9 @@
 from langchain_neo4j import Neo4jGraph
 #from langchain_community.vectorstores import Neo4jVector
 from dotenv import load_dotenv
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-
 import json
-from langchain_community.document_loaders import PyPDFLoader,DirectoryLoader, TextLoader
-from pdf2image import convert_from_path
-import easyocr
-import numpy as np
-from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 load_dotenv()
 neo4j_graph = Neo4jGraph(
     url="bolt://localhost:7687",
