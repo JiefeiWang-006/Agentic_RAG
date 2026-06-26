@@ -14,6 +14,7 @@ from typing import List
 from pydantic import BaseModel, Field
 from typing import List
 from pydantic import BaseModel
+from typing import Literal
 neo4j_graph = Neo4jGraph(
     url="bolt://localhost:7687",
     username="neo4j",
@@ -92,7 +93,12 @@ class Diagnosis(BaseModel):
 
 
 
-
+class Reflection(BaseModel):
+    consistency: bool
+    missing_diseases: List[str]
+    reasoning_issues: List[str]
+    additional_tests: List[str]
+    confidence_adjustment: Optional[str]
 
 
 
@@ -100,13 +106,18 @@ from typing import TypedDict
 
 class CDSSState(TypedDict):
     description: str
-
     summary: Summary
     factor: Factor
     hypothesis: Hypothesis
     evidence: Evidence
     diagnosis: Diagnosis
     rag_context:str
+    reflection: Reflection
+
+
+
+
+
 
 
 
@@ -138,9 +149,12 @@ def diagnosis(state:CDSSState):
     factor_llm = llm.with_structured_output(Summary)
     chain = summary_prompt | factor_llm
 
-    return chain.invoke({
-        "description": description.model_dump()  
+    summary = chain.invoke({
+        "description": state["description"].model_dump()  
     })
+    return {
+        "summary": summary
+    }
 
 
 def factor(state:CDSSState)-> Factor:
@@ -172,10 +186,12 @@ def factor(state:CDSSState)-> Factor:
     factor_llm = llm.with_structured_output(Factor)
     chain = factor_prompt | factor_llm
 
-    return chain.invoke({
+    factor = chain.invoke({
         "summary": state["summary"].model_dump()   
     })
-
+    return {
+        "factor":factor
+    }
 
 
     
@@ -213,10 +229,12 @@ def hypothesis(state:CDSSState) -> Hypothesis:
     
     chain = hypothesis_prompt | hypothesis_llm
 
-    return chain.invoke({
+    hypothesis = chain.invoke({
         "factor": state["factor"].model_dump()   
     })
-
+    return {
+        "hypothesis":hypothesis
+    }
 
 def rag_verify(state:CDSSState) -> Evidence:
     evidence_prompt = ChatPromptTemplate.from_messages([
@@ -260,34 +278,103 @@ def rag_verify(state:CDSSState) -> Evidence:
 
     chain = evidence_prompt | evidence_llm
 
-    return chain.invoke ({
+    evidence = chain.invoke ({
         "factor": state["factor"].model_dump(),
         "hypothesis" : state["hypothesis"].model_dump(),
         "rag_context" : state["rag_context"]
     })
+    return {
+        "evidence":evidence
+    }
+
+
+def reflection(state:CDSSState) -> Reflection:
+    reflection_prompt = ChatPromptTemplate.from_messages([
+(
+    "system",
+    """
+你是一名临床决策支持系统（CDSS）中的推理审查模块（Reflection Agent）。
+
+你的任务不是重新诊断患者，而是审查已有的推理过程是否存在问题。
+
+请依据：
+
+1. 患者病历摘要（Summary）
+2. 临床特征（Factor）
+3. 鉴别诊断（Hypothesis）
+4. 证据分析（Evidence）
+
+对整个推理链进行质量审查。
+
+请重点检查：
+
+1. 是否存在推理漏洞或逻辑矛盾。
+2. 是否遗漏了重要或高风险疾病。
+3. 当前证据是否足以支持各候选疾病。
+4. 是否存在关键缺失证据影响诊断可信度。
+5. 是否建议补充检查以提高诊断确定性。
+6. 不允许编造患者不存在的症状、体征或检查结果。
+7. 不允许给出最终诊断或治疗建议。
+
+仅返回JSON。
+"""
+),
+(
+    "human",
+    """
+患者病历摘要：
+
+{summary}
+
+临床特征：
+
+{factor}
+
+鉴别诊断：
+
+{hypothesis}
+
+证据分析：
+
+{evidence}
+"""
+)
+])
+
+    reflection_llm = llm.with_structured_output(Reflection)
+    chain = reflection_prompt | reflection_llm
+
+    reflection = chain.invoke({
+        "evidence": state["evidence"].model_dump()
+    })
+    return {
+        "reflection" : reflection
+    }
 
 
 
 def rank(state:CDSSState) -> Diagnosis:
     diagnosis_prompt = ChatPromptTemplate.from_messages(
-        [   
+        [
             (
                 "system",
                 """
-你是一名临床决策支持系统(CDSS)中的诊断排序模块。
+你是一名临床决策支持系统（CDSS）中的诊断排序模块。
 
 任务：
 
-根据提供的证据分析结果，对候选疾病进行排序。
+根据证据分析结果（Evidence）和推理审查结果（Reflection），
+对候选疾病进行最终排序。
 
 要求：
 
-1. 综合支持证据、反对证据和缺失证据
-2. 为每个疾病生成最终置信度(0~1)
-3. 按置信度从高到低排序
-4. 给出主要诊断依据(rationale)
-5. 给出建议检查(recommended_tests)
-6. 给出紧急程度(urgency)
+1. 综合支持证据、反对证据和缺失证据。
+2. 结合Reflection中的推理审查意见，对各候选疾病的置信度进行合理调整。
+3. 为每个疾病生成最终置信度（0~1）。
+4. 按置信度从高到低排序。
+5. 给出主要诊断依据（rationale）。
+6. 给出建议检查（recommended_tests）。
+7. 给出紧急程度（urgency）。
 
 紧急程度只能取：
 
@@ -297,12 +384,15 @@ def rank(state:CDSSState) -> Diagnosis:
 
 规则：
 
-- 支持证据越多，置信度越高
-- 反对证据越多，置信度越低
-- 缺失关键证据时降低置信度
-- 不允许编造不存在的症状
-- 不允许编造检查结果
-- 不允许给出治疗方案
+- 支持证据越多，置信度越高。
+- 反对证据越多，置信度越低。
+- 缺失关键证据时降低置信度。
+- 如果Reflection指出推理存在逻辑漏洞、关键证据缺失或诊断依据不足，应适当降低相应疾病的置信度。
+- 如果Reflection提示存在需要优先排除的高风险疾病，应在排序中予以充分考虑，并在诊断依据中说明原因。
+- Reflection仅用于评估推理质量，不允许据此编造新的患者症状、体征、检查结果或医学事实。
+- 不允许编造不存在的症状。
+- 不允许编造检查结果。
+- 不允许给出治疗方案。
 
 返回Diagnosis结构。
                 """
@@ -313,6 +403,10 @@ def rank(state:CDSSState) -> Diagnosis:
 证据分析结果：
 
 {evidence}
+
+推理审查结果：
+
+{reflection}
                 """
             )
         ]
@@ -321,9 +415,14 @@ def rank(state:CDSSState) -> Diagnosis:
     diagnosis_llm = llm.with_structured_output(Diagnosis)
     chain = diagnosis_prompt | diagnosis_llm
 
-    return chain.invoke({
-        "evidence": state["evidence"].model_dump()
+    diagnosis = chain.invoke({
+        "evidence": state["evidence"].model_dump(),
+        "reflection":state["reflection"].model_dump()
     })
+    return {
+        "diagnosis" : diagnosis
+    }
+
 
 
 from langgraph.graph import END, START, StateGraph
@@ -333,6 +432,7 @@ workflow.add_node("diagnosis",diagnosis)
 workflow.add_node("factor",factor)
 workflow.add_node("hypothesis",hypothesis)
 workflow.add_node("rag_verify",rag_verify)
+workflow.add_node("reflection",reflection)
 workflow.add_node("rank",rank)
 
 workflow.set_entry_point("diagnosis")
@@ -340,7 +440,8 @@ workflow.set_entry_point("diagnosis")
 workflow.add_edge("diagnosis","factor")
 workflow.add_edge("factor","hypothesis")
 workflow.add_edge("hypothesis","rag_verify")
-workflow.add_edge("rag_verify","rank")
+workflow.add_edge("rag_verify","reflection")
+workflow.add_edge("reflection","rank")
 workflow.add_edge("rank",END)
 
 graph = workflow.compile()
