@@ -8,7 +8,7 @@ config = {"configurable": {"thread_id": "user_A:chat_2"}}
 while True:
     user_input = input("你：")
     if user_input == "exit":
-        break
+        break  
     result = retrieval_agent.graph.invoke({ "messages": [HumanMessage(content=user_input)],
                         "session_id": "test_session",
                         "docs": [],

@@ -1,6 +1,7 @@
 import langgraph
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+import os
 from dotenv import load_dotenv
 load_dotenv()
 from langchain_neo4j import Neo4jGraph
@@ -23,7 +24,7 @@ neo4j_graph = Neo4jGraph(
 
 llm = ChatOpenAI(
     model="deepseek-chat",
-    openai_api_key="DEEPSEEK_API_KEY",
+    openai_api_key=os.getenv("DEEPSEEK_API_KEY"),
     openai_api_base="https://api.deepseek.com",
     temperature=0                   
 )
@@ -57,9 +58,6 @@ class DiseaseHypothesis(BaseModel):
 
 class Hypothesis(BaseModel):
     hypotheses: List[DiseaseHypothesis]
-
-
-
 
 class EvidenceItem(BaseModel):
     disease_name: str
@@ -104,7 +102,7 @@ class Reflection(BaseModel):
 
 from typing import TypedDict
 
-class CDSSState(TypedDict):
+"""class CDSSState(TypedDict):
     description: str
     summary: Summary
     factor: Factor
@@ -112,10 +110,18 @@ class CDSSState(TypedDict):
     evidence: Evidence
     diagnosis: Diagnosis
     rag_context:str
-    reflection: Reflection
+    reflection: Reflection"""
 
 
-
+class CDSSState(TypedDict):
+    description: str
+    summary: Optional[Summary]
+    factor: Optional[Factor]
+    hypothesis: Optional[Hypothesis]
+    evidence: Optional[Evidence]
+    reflection: Optional[Reflection]
+    diagnosis: Optional[Diagnosis]
+    rag_context: Optional[str]
 
 
 
@@ -150,7 +156,7 @@ def diagnosis(state:CDSSState):
     chain = summary_prompt | factor_llm
 
     summary = chain.invoke({
-        "description": state["description"].model_dump()  
+        "description": state["description"]
     })
     return {
         "summary": summary
@@ -445,4 +451,27 @@ workflow.add_edge("reflection","rank")
 workflow.add_edge("rank",END)
 
 graph = workflow.compile()
+
+
+result = graph.invoke( {"description": "胸痛"})
+                         
+
+print(result)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
