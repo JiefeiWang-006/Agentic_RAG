@@ -12,9 +12,6 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.output_parsers import JsonOutputParser
 from typing import List
-from pydantic import BaseModel, Field
-from typing import List
-from pydantic import BaseModel
 from typing import Literal
 neo4j_graph = Neo4jGraph(
     url="bolt://localhost:7687",
@@ -102,15 +99,6 @@ class Reflection(BaseModel):
 
 from typing import TypedDict
 
-"""class CDSSState(TypedDict):
-    description: str
-    summary: Summary
-    factor: Factor
-    hypothesis: Hypothesis
-    evidence: Evidence
-    diagnosis: Diagnosis
-    rag_context:str
-    reflection: Reflection"""
 
 
 class CDSSState(TypedDict):
@@ -121,7 +109,7 @@ class CDSSState(TypedDict):
     evidence: Optional[Evidence]
     reflection: Optional[Reflection]
     diagnosis: Optional[Diagnosis]
-    rag_context: Optional[str]
+    rag_context: str
 
 
 
@@ -135,7 +123,7 @@ def diagnosis(state:CDSSState):
     (
         "system",
         """
-        你是一名病历结构化助手。
+        你是一名病历结构化助手。必须以 JSON 格式输出结果。
 
         从病历中提取：
 
@@ -152,7 +140,7 @@ def diagnosis(state:CDSSState):
     ("human", "{description}")
     ])
     #result = llm.invoke(summary_prompt.format_messages(description = description)).content
-    factor_llm = llm.with_structured_output(Summary)
+    factor_llm = llm.with_structured_output(Summary,method="json_mode")
     chain = summary_prompt | factor_llm
 
     summary = chain.invoke({
@@ -169,19 +157,19 @@ def factor(state:CDSSState)-> Factor:
 (
 "system",
 """
-你是一名资深内科医生。
+你是一名资深内科医生。必须以 JSON 格式输出结果。
 
 分析病历信息。
 
 返回：
 
-{
+{{
   "symptoms":[],
   "symptom_features":[],
   "risk_factors":[],
   "systems":[],
   "candidate_diseases":[]
-}
+}}
 
 不要给最终诊断。
 只返回JSON。
@@ -189,7 +177,8 @@ def factor(state:CDSSState)-> Factor:
 ),
 ("human","{summary}")
 ])
-    factor_llm = llm.with_structured_output(Factor)
+    
+    factor_llm = llm.with_structured_output(Factor, method="json_mode")
     chain = factor_prompt | factor_llm
 
     factor = chain.invoke({
@@ -207,7 +196,7 @@ def hypothesis(state:CDSSState) -> Hypothesis:
 (
 "system",
 """
-你是一名经验丰富的内科医生。
+你是一名经验丰富的内科医生。必须以 JSON 格式输出结果。
 
 任务:
 
@@ -223,7 +212,17 @@ def hypothesis(state:CDSSState) -> Hypothesis:
 5. 只依据提供的信息推理
 6. 不允许编造不存在的症状
 
-输出JSON。
+输出格式：
+{{
+  "hypotheses": [
+    {{
+      "disease_name": "疾病名称",
+      "probability": 0.0,
+      "supporting_features": ["支持特征1", "支持特征2"]
+    }}
+  ]
+}}
+
 """
 ),
 (
@@ -231,7 +230,7 @@ def hypothesis(state:CDSSState) -> Hypothesis:
 "{factor}"
 )
 ])
-    hypothesis_llm = llm.with_structured_output(Hypothesis)
+    hypothesis_llm = llm.with_structured_output(Hypothesis, method="json_mode")
     
     chain = hypothesis_prompt | hypothesis_llm
 
@@ -247,7 +246,7 @@ def rag_verify(state:CDSSState) -> Evidence:
 (
 "system",
 """
-你是临床决策支持系统(CDSS)中的证据评估模块。
+你是临床决策支持系统(CDSS)中的证据评估模块。必须以 JSON 格式输出结果。
 
 任务：
 
@@ -259,6 +258,20 @@ def rag_verify(state:CDSSState) -> Evidence:
 4. 只能依据提供的患者信息和参考文献
 5. 不允许编造事实
 6. 不允许给最终诊断
+
+返回格式：
+
+{{
+  "evidence_results": [
+    {{
+      "disease_name": "疾病名称",
+      "supporting_evidence": ["支持证据1", "支持证据2"],
+      "contradicting_evidence": ["反对证据1", "反对证据2"],
+      "missing_evidence": ["缺失证据1", "缺失证据2"],
+      "evidence_strength": 0.0
+    }}
+  ]
+}}
 
 返回JSON。
 """
@@ -280,7 +293,7 @@ def rag_verify(state:CDSSState) -> Evidence:
 """
 )
 ])
-    evidence_llm = llm.with_structured_output(Evidence)
+    evidence_llm = llm.with_structured_output(Evidence, method="json_mode")
 
     chain = evidence_prompt | evidence_llm
 
@@ -299,7 +312,7 @@ def reflection(state:CDSSState) -> Reflection:
 (
     "system",
     """
-你是一名临床决策支持系统（CDSS）中的推理审查模块（Reflection Agent）。
+你是一名临床决策支持系统（CDSS）中的推理审查模块（Reflection Agent）。必须以 JSON 格式输出结果。
 
 你的任务不是重新诊断患者，而是审查已有的推理过程是否存在问题。
 
@@ -322,7 +335,15 @@ def reflection(state:CDSSState) -> Reflection:
 6. 不允许编造患者不存在的症状、体征或检查结果。
 7. 不允许给出最终诊断或治疗建议。
 
-仅返回JSON。
+返回形式：
+{{
+  "consistency": true,
+  "missing_diseases": ["疾病1", "疾病2"],
+  "reasoning_issues": ["问题1", "问题2"],
+  "additional_tests": ["检查1", "检查2"],
+  "confidence_adjustment": "调整说明或null"
+}}
+
 """
 ),
 (
@@ -347,11 +368,14 @@ def reflection(state:CDSSState) -> Reflection:
 )
 ])
 
-    reflection_llm = llm.with_structured_output(Reflection)
+    reflection_llm = llm.with_structured_output(Reflection, method="json_mode")
     chain = reflection_prompt | reflection_llm
 
     reflection = chain.invoke({
-        "evidence": state["evidence"].model_dump()
+        "evidence": state["evidence"].model_dump(),
+        "summary":state["summary"].model_dump(),
+        "factor":state["factor"].model_dump(),
+        "hypothesis":state["hypothesis"].model_dump()
     })
     return {
         "reflection" : reflection
@@ -365,7 +389,7 @@ def rank(state:CDSSState) -> Diagnosis:
             (
                 "system",
                 """
-你是一名临床决策支持系统（CDSS）中的诊断排序模块。
+你是一名临床决策支持系统（CDSS）中的诊断排序模块。必须以 JSON 格式输出结果。
 
 任务：
 
@@ -401,6 +425,21 @@ def rank(state:CDSSState) -> Diagnosis:
 - 不允许给出治疗方案。
 
 返回Diagnosis结构。
+返回格式：
+
+{{
+    "ranked_diagnoses": [
+    {{
+        "disease_name": [],
+        "confidence": [],
+        "rationale": [],
+        "recommended_tests": [],
+        "urgency": "low 或 medium 或 high"
+    }}
+    ]
+}}
+    
+
                 """
             ),
             (
@@ -418,7 +457,7 @@ def rank(state:CDSSState) -> Diagnosis:
         ]
     )
 
-    diagnosis_llm = llm.with_structured_output(Diagnosis)
+    diagnosis_llm = llm.with_structured_output(Diagnosis, method="json_mode")
     chain = diagnosis_prompt | diagnosis_llm
 
     diagnosis = chain.invoke({
@@ -453,7 +492,7 @@ workflow.add_edge("rank",END)
 graph = workflow.compile()
 
 
-result = graph.invoke( {"description": "胸痛"})
+result = graph.invoke( {"description": "胸痛","rag_context":" "})
                          
 
 print(result)
