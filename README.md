@@ -77,7 +77,25 @@ use llm to extract key words/key logics from existed text
 
 
 
-
+START
+  ↓
+diagnosis
+  ↓
+factor
+  ↓
+hypothesis
+  ↓
+rag_context
+  ↓
+rag_verify
+  ↓
+reflection
+  ↓
+rank
+  ↓
+format_report
+  ↓
+END
 
 
 

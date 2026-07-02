@@ -47,16 +47,16 @@ response_model = ChatOpenAI(
 )
 
 
-loader =  {"Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf": PyPDFLoader("Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf")}
+loader =  {"documents/Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf": PyPDFLoader("documents/Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf")}
 docs = []
 for loader in loader.values():
         docs.extend(loader.load())
-        pages = convert_from_path("Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf")
+        pages = convert_from_path("documents/Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf")
         reader = easyocr.Reader(['ch_sim', 'en'])
         for page in pages:
             page_array = np.array(page)
             result = reader.readtext(page_array)
-docs.append(Document(page_content=" ".join([line[1] for line in result]), metadata={"source": "Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf"}))
+docs.append(Document(page_content=" ".join([line[1] for line in result]), metadata={"source": "documents/Type 2 Diabetes Mellitus- A Review of Multi-Target Drugs.pdf"}))
 splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
 chunks = splitter.split_documents(docs)
 
@@ -107,8 +107,6 @@ history_aware_retriever = create_history_aware_retriever(response_model,
     reranking_retriever,
     prompt1
 )
-
-
 
 
 @tool
@@ -344,20 +342,24 @@ workflow.add_conditional_edges(
 workflow.add_edge("generate","context_trace")
 workflow.add_edge("context_trace", END)
 
+
 import sqlite3
 from langgraph.checkpoint.sqlite import SqliteSaver
-
 conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
 checkpointer = SqliteSaver(conn)
 
+
 #memory = MemorySaver()
 graph = workflow.compile(checkpointer=checkpointer)
-
-
-
-
-
-
+config = {"configurable": {"thread_id": "user_A:chat_2"}}
+result = graph.invoke({ "messages": [HumanMessage(content="胸痛")],
+                        "session_id": "test_session",
+                        "docs": [],
+                        "retry_count": 0
+        },
+                         config = config)
+    
+print(result["messages"][-1].content)
 
 
 
@@ -384,69 +386,11 @@ while True:
                        "retry_count": 0
        },
                          config = config)
-    
-   # get_session_history("test_session").add_user_message(user_input)
-    #get_session_history("test_session").add_ai_message(result["messages"][-1].content)
+
     print(result["messages"][-1].content)
 """
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-"""loader =  {"fudan_case.pdf": PyPDFLoader("fudan_case.pdf")}
-docs = []
-for loader in loader.values(): 
-    docs.extend(loader.load())
-pages = convert_from_path("fudan_case.pdf")
-reader = easyocr.Reader(['ch_sim', 'en'])
-for page in pages:
-    page_array = np.array(page)
-    result = reader.readtext(page_array)
-   # print(result)
-docs.append(Document(page_content=" ".join([line[1] for line in result]), metadata={"source": "fudan_case.pdf"}))
-splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-chunks = splitter.split_documents(docs)
-build_graph.build_knowledge_graph(chunks)
-from langchain_community.embeddings import HuggingFaceEmbeddings
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-)
-vectorstore = Chroma.from_documents(chunks, embeddings)
-
-
-
-
-
-
-
-
+"""
 store = {}
 #提高调用效率，避免每次调用都创建新的 ChatMessageHistory 实例
 def get_session_history(session_id: str) :
@@ -454,10 +398,6 @@ def get_session_history(session_id: str) :
         store[session_id] = ChatMessageHistory()
     print(ChatMessageHistory())
     return store[session_id]"""
-
-
-
-
 
 """def retrieve_node(state: my_state.RAGState):
     检索节点
@@ -467,12 +407,14 @@ def get_session_history(session_id: str) :
     return {
         "docs": [result],
         "retry_count": state.get("retry_count", 0) + 1
-    }"""
-"""def retrieve_node_from_graph(state:my_state.RAGState):
+    }
+def retrieve_node_from_graph(state:my_state.RAGState):
     query = state["messages"][-1].content
     result = graph_retrieve_tool.invoke({"query":query})
     #print(result)
     return {
         "docs": [result],
         "retry_count": state.get("retry_count", 0) + 1
-    }"""
+    }
+
+"""

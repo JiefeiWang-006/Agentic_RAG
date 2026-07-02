@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from langchain_neo4j import Neo4jGraph
 from typing import List, Optional, Dict, Any
+from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -68,15 +69,10 @@ class Evidence(BaseModel):
 
 
 class RankedDiagnosis(BaseModel):
-
     disease_name: str
-
     confidence: float
-
     rationale: str
-
     recommended_tests: List[str]
-
     urgency: Literal[
         "low",
         "medium",
@@ -94,6 +90,7 @@ class Reflection(BaseModel):
     reasoning_issues: List[str]
     additional_tests: List[str]
     confidence_adjustment: Optional[str]
+    
 
 
 
@@ -110,7 +107,7 @@ class CDSSState(TypedDict):
     reflection: Optional[Reflection]
     diagnosis: Optional[Diagnosis]
     rag_context: str
-
+    report: str
 
 
 
@@ -239,6 +236,30 @@ def hypothesis(state:CDSSState) -> Hypothesis:
     })
     return {
         "hypothesis":hypothesis
+    }
+def rag_retrieve(state:CDSSState) -> str:
+    hypotheses = state["hypothesis"].hypotheses
+    disease_list = "、".join([h.disease_name for h in hypotheses])
+    rag_context_prompt = f"""
+请针对以下候选疾病，分别检索并提供：
+1. 诊断标准
+2. 典型临床表现
+3. 鉴别诊断要点
+
+候选疾病：{disease_list}
+
+患者主要症状：{state["description"]}
+"""
+    import retrieval_agent
+    config = {"configurable": {"thread_id": "user_A:chat_2"}}
+    result = retrieval_agent.graph.invoke({ "messages": [HumanMessage(content=rag_context_prompt)],
+                        "session_id": "test_session",
+                        "docs": [],
+                        "retry_count": 0
+        },
+                         config = config)
+    return {
+        "rag_context":result["messages"][-1].content
     }
 
 def rag_verify(state:CDSSState) -> Evidence:
@@ -437,15 +458,13 @@ def rank(state:CDSSState) -> Diagnosis:
         "urgency": "low 或 medium 或 high"
     }}
     ]
-}}
-    
-
-                """
+}} 
+"""
             ),
             (
                 "human",
                 """
-证据分析结果：
+                    证据分析结果：
 
 {evidence}
 
@@ -469,6 +488,87 @@ def rank(state:CDSSState) -> Diagnosis:
     }
 
 
+def format_report(state: CDSSState) -> dict:
+    s = state
+    lines = []
+
+    # ── 基本信息 ──────────────────────────────────────────
+    lines.append("=" * 60)
+    lines.append("         临床决策支持报告（CDSS）")
+    lines.append("=" * 60)
+    lines.append(f"主诉：{s['description']}")
+    lines.append("")
+
+    # ── 病历摘要 ──────────────────────────────────────────
+    summary = s["summary"]
+    lines.append("【病历摘要】")
+    lines.append(f"  主诉：        {summary.chief_complaint or '未提供'}")
+    lines.append(f"  现病史：      {summary.present_illness or '未提供'}")
+    lines.append(f"  既往史：      {summary.past_history or '未提供'}")
+    lines.append(f"  用药史：      {summary.medications or '未提供'}")
+    lines.append(f"  检验结果：    {summary.labs or '未提供'}")
+    lines.append(f"  生命体征：    {summary.vitals or '未提供'}")
+    lines.append("")
+
+    # ── 症状分析 ──────────────────────────────────────────
+    factor = s["factor"]
+    lines.append("【症状分析】")
+    lines.append(f"  症状：        {', '.join(factor.symptoms) or '未提供'}")
+    lines.append(f"  症状特征：    {', '.join(factor.symptom_features) or '未提供'}")
+    lines.append(f"  危险因素：    {', '.join(factor.risk_factors) or '未提供'}")
+    lines.append(f"  受累系统：    {', '.join(factor.systems) or '未提供'}")
+    lines.append("")
+
+    # ── 鉴别诊断 ──────────────────────────────────────────
+    lines.append("【鉴别诊断】")
+    for h in s["hypothesis"].hypotheses:
+        lines.append(f"  • {h.disease_name}（概率 {h.probability:.0%}）")
+        lines.append(f"    支持特征：{', '.join(h.supporting_features)}")
+    lines.append("")
+
+    # ── 证据评估 ──────────────────────────────────────────
+    lines.append("【证据评估】")
+    for e in s["evidence"].evidence_results:
+        lines.append(f"  ▌ {e.disease_name}（证据强度 {e.evidence_strength:.0%}）")
+        lines.append(f"    支持：  {', '.join(e.supporting_evidence)}")
+        lines.append(f"    反对：  {', '.join(e.contradicting_evidence)}")
+        lines.append(f"    缺失：  {', '.join(e.missing_evidence)}")
+    lines.append("")
+
+    # ── 推理反思 ──────────────────────────────────────────
+    ref = s["reflection"]
+    lines.append("【推理反思】")
+    lines.append(f"  推理一致性：  {'✓ 一致' if ref.consistency else '✗ 存在问题'}")
+    if ref.missing_diseases:
+        lines.append(f"  遗漏疾病：    {', '.join(ref.missing_diseases)}")
+    if ref.reasoning_issues:
+        lines.append("  推理问题：")
+        for issue in ref.reasoning_issues:
+            lines.append(f"    - {issue}")
+    if ref.additional_tests:
+        lines.append(f"  建议检查：    {', '.join(ref.additional_tests)}")
+    if ref.confidence_adjustment:
+        lines.append(f"  置信度说明：  {ref.confidence_adjustment}")
+    lines.append("")
+
+    # ── 最终诊断排名 ──────────────────────────────────────
+    lines.append("【最终诊断建议】")
+    urgency_map = {"high": "🔴 紧急", "medium": "🟡 中等", "low": "🟢 常规"}
+    for i, d in enumerate(s["diagnosis"].ranked_diagnoses, 1):
+        urgency = urgency_map.get(d.urgency, d.urgency)
+        lines.append(f"  {i}. {d.disease_name}（置信度 {d.confidence:.0%}）{urgency}")
+        lines.append(f"     {d.rationale}")
+        lines.append(f"     建议检查：{', '.join(d.recommended_tests)}")
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("⚠️  本报告仅供临床参考，最终诊断以医生判断为准。")
+    lines.append("=" * 60)
+
+    report = "\n".join(lines)
+    print(report)
+    return {"report": report}
+
+
 
 from langgraph.graph import END, START, StateGraph
 workflow = StateGraph(CDSSState)
@@ -476,18 +576,22 @@ workflow = StateGraph(CDSSState)
 workflow.add_node("diagnosis",diagnosis)
 workflow.add_node("factor",factor)
 workflow.add_node("hypothesis",hypothesis)
+workflow.add_node("rag_context",rag_retrieve)
 workflow.add_node("rag_verify",rag_verify)
 workflow.add_node("reflection",reflection)
 workflow.add_node("rank",rank)
+workflow.add_node("format_report", format_report)
 
 workflow.set_entry_point("diagnosis")
 
 workflow.add_edge("diagnosis","factor")
 workflow.add_edge("factor","hypothesis")
-workflow.add_edge("hypothesis","rag_verify")
+workflow.add_edge("hypothesis","rag_context")
+workflow.add_edge("rag_context","rag_verify")
 workflow.add_edge("rag_verify","reflection")
 workflow.add_edge("reflection","rank")
-workflow.add_edge("rank",END)
+workflow.add_edge("rank", "format_report")
+workflow.add_edge("format_report", END)
 
 graph = workflow.compile()
 
@@ -495,7 +599,7 @@ graph = workflow.compile()
 result = graph.invoke( {"description": "胸痛","rag_context":" "})
                          
 
-print(result)
+print(result["report"])
 
 
 
